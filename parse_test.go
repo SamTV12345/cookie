@@ -2,6 +2,7 @@ package cookie
 
 import (
 	"encoding/base64"
+	"errors"
 	"testing"
 )
 
@@ -15,6 +16,10 @@ func TestShouldParseCookieStringToMap(t *testing.T) {
 	if resultMap["foo"] != "123" {
 		t.Errorf("Expected foo=123 but got %v", resultMap["foo"])
 	}
+}
+
+func TestShouldParseWithErrorInDecoder(t *testing.T) {
+
 }
 
 func TestShouldIgnoreOWS(t *testing.T) {
@@ -160,6 +165,13 @@ func (p *Base64ParseOptions) Decode(str string) (string, error) {
 	return string(base64Rep), nil
 }
 
+func TestParseTooShortCookie(t *testing.T) {
+	result := Parse("f", nil)
+	if len(result) != 0 {
+		t.Errorf("Expected foo=bar but got %v", result["foo"])
+	}
+}
+
 func TestShouldParseNativeProperties(t *testing.T) {
 	result := Parse("toString=foo;valueOf=bar", nil)
 	if result["toString"] != "foo" || result["valueOf"] != "bar" {
@@ -172,6 +184,22 @@ func TestShouldParseWithDecodingFunction(t *testing.T) {
 
 	result := Parse("foo=YmFy", &b)
 	if result["foo"] != "bar" {
+		t.Errorf("Expected foo=bar but got %v", result)
+	}
+}
+
+type InvalidDecoder struct {
+}
+
+func (d *InvalidDecoder) Decode(str string) (string, error) {
+	return str, errors.New("invalid decoder")
+}
+
+func TestShouldParseWithErrorsInDecoding(t *testing.T) {
+	b := InvalidDecoder{}
+
+	result := Parse("foo=YmFy", &b)
+	if result["foo"] != "Error decoding cookie value" {
 		t.Errorf("Expected foo=bar but got %v", result)
 	}
 }

@@ -1,9 +1,13 @@
 package cookie
 
 import (
+	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // RegExp to match cookie-name in RFC 6265 sec 4.1.1
@@ -19,7 +23,7 @@ import (
 //
 // Note: Allowing more characters - https://github.com/jshttp/cookie/issues/191
 // Allow same range as cookie value, except `=`, which delimits end of name.
-var cookieNameRegExp = regexp.MustCompile("^[\x21-\x3A\x3C-\x7E]*$")
+var cookieNameRegExp = regexp.MustCompile("^[\x21-\x3A\x3C\x3E-\x7E]*$")
 
 // RegExp to match cookie-value in RFC 6265 sec 4.1.1
 //
@@ -86,44 +90,36 @@ type ParseOptions interface {
 	Decode(str string) (string, error)
 }
 
-// indexOf emuliert das Verhalten von JavaScript's indexOf mit einem zweiten Argument für die Position.
-func indexOf(str, substr string, position int) int {
+func IndexOf(str, substr string, position int) int {
 	strLen := len(str)
 
-	// Wenn die Position größer als die Länge der Zeichenkette ist, wird nicht gesucht.
 	if position >= strLen {
 		return -1
 	}
 
-	// Wenn die Position kleiner als 0 ist, wird sie als 0 behandelt.
 	if position < 0 {
 		position = 0
 	}
 
-	// Suchen Sie nach dem Substring ab der angegebenen Position.
 	index := strings.Index(str[position:], substr)
 	if index == -1 {
 		return -1
 	}
 
-	// Der tatsächliche Index ist relativ zur Startposition.
 	return index + position
 }
 
 func LastIndex(str, substr string, position int) int {
 	strLen := len(str)
 
-	// Wenn die Position größer als die Länge der Zeichenkette ist, wird nicht gesucht.
 	if position >= strLen {
 		return -1
 	}
 
-	// Wenn die Position kleiner als 0 ist, wird sie als 0 behandelt.
 	if position < 0 {
 		position = 0
 	}
 
-	// Suchen Sie nach dem Substring ab der angegebenen Position.
 	index := strings.LastIndex(str[:position], substr)
 	if index == -1 {
 		return -1
@@ -149,12 +145,12 @@ func Parse(str string, options ParseOptions) map[string]interface{} {
 	index := 0
 
 	for {
-		eqIdx := indexOf(str, "=", index)
+		eqIdx := IndexOf(str, "=", index)
 		if eqIdx == -1 {
 			break
 		}
 
-		var colonIdx = indexOf(str, ";", index)
+		var colonIdx = IndexOf(str, ";", index)
 		var endIndex int
 
 		if colonIdx == -1 {
@@ -197,25 +193,28 @@ type EncodeOptions interface {
 	Encode(string) (string, error)
 }
 
-type PriorityType int
+type PriorityType string
 
 const (
-	PriorityLow PriorityType = iota
-	PriorityMedium
-	PriorityHigh
+	PriorityLow    PriorityType = "Low"
+	PriorityMedium PriorityType = "Medium"
+	PriorityHigh   PriorityType = "High"
 )
 
 type SameSite string
 
 const (
 	SameSiteTrue   SameSite = "true"
-	SameSiteFalse  SameSite = "false"
 	SameSiteLax    SameSite = "lax"
 	SameSiteStrict SameSite = "strict"
 	SameSiteNone   SameSite = "none"
+	SameSiteFalse  SameSite = "false"
 )
 
-type SerializeOptions interface {
+type EncodeFunc = func(string) (string, error)
+
+type SerializeOptions struct {
+	encode []EncodeFunc
 	// MaxAge
 	// Specifies the `number` (in seconds) to be the value for the [`Max-Age` `Set-Cookie` attribute](https://tools.ietf.org/html/rfc6265#section-5.2.2).
 	//
@@ -223,7 +222,7 @@ type SerializeOptions interface {
 	// `maxAge` are set, then `maxAge` takes precedence, but it is possible not all clients by obey this,
 	// so if both are set, they should point to the same date and time.
 	//
-	MaxAge() *int
+	MaxAge *int
 	// Expires
 	// Specifies the `Date` object to be the value for the [`Expires` `Set-Cookie` attribute](https://tools.ietf.org/html/rfc6265#section-5.2.1).
 	// When no expiration is set clients consider this a "non-persistent cookie" and delete it the current session is over.
@@ -232,27 +231,27 @@ type SerializeOptions interface {
 	//`maxAge` are set, then `maxAge` takes precedence, but it is possible not all clients by obey this,
 	// so if both are set, they should point to the same date and time.
 	//
-	Expires() *int
+	Expires *time.Time
 	// Domain
 	// Specifies the value for the [`Domain` `Set-Cookie` attribute](https://tools.ietf.org/html/rfc6265#section-5.2.3).
 	// When no domain is set clients consider the cookie to apply to the current domain only.
 	//
-	Domain() *string
+	Domain *string
 	// Path
 	// Specifies the value for the [`Path` `Set-Cookie` attribute](https://tools.ietf.org/html/rfc6265#section-5.2.4).
 	// When no path is set, the path is considered the ["default path"](https://tools.ietf.org/html/rfc6265#section-5.1.4).
 	//
-	Path() *string
+	Path *string
 	// HttpOnly
 	// Enables the [`HttpOnly` `Set-Cookie` attribute](https://tools.ietf.org/html/rfc6265#section-5.2.6).
 	// When enabled, clients will not allow client-side JavaScript to see the cookie in `document.cookie`.
 	//
-	HttpOnly() *bool
+	HttpOnly *bool
 	// Secure
 	// Enables the [`Secure` `Set-Cookie` attribute](https://tools.ietf.org/html/rfc6265#section-5.2.5).
 	// When enabled, clients will only send the cookie back if the browser has a HTTPS connection.
 	//
-	Secure() *bool
+	Secure *bool
 	// Partitioned
 	// Enables the [`Partitioned` `Set-Cookie` attribute](https://tools.ietf.org/html/draft-cutler-httpbis-partitioned-cookies/).
 	// When enabled, clients will only send the cookie back when the current domain _and_ top-level domain matches.
@@ -261,7 +260,7 @@ type SerializeOptions interface {
 	// This also means clients may ignore this attribute until they understand it. More information
 	// about can be found in [the proposal](https://github.com/privacycg/CHIPS).
 	//
-	Partitioned() *bool
+	Partitioned *bool
 	// Priority
 	// Specifies the value for the [`Priority` `Set-Cookie` attribute](https://tools.ietf.org/html/draft-west-cookie-priority-00#section-4.1).
 	//
@@ -271,7 +270,7 @@ type SerializeOptions interface {
 	//
 	// More information about priority levels can be found in [the specification](https://tools.ietf.org/html/draft-west-cookie-priority-00#section-4.1).
 	//
-	Priority() *PriorityType
+	Priority *PriorityType
 	// SameSite
 	// Specifies the value for the [`SameSite` `Set-Cookie` attribute](https://tools.ietf.org/html/draft-ietf-httpbis-rfc6265bis-09#section-5.4.7).
 	//
@@ -282,7 +281,132 @@ type SerializeOptions interface {
 	//
 	// More information about enforcement levels can be found in [the specification](https://tools.ietf.org/html/draft-ietf-httpbis-rfc6265bis-09#section-5.4.7).
 	//
-	SameSite() *SameSite
+	SameSite *SameSite
+}
+
+func (s *SerializeOptions) SetEncode(encode EncodeFunc) {
+	s.encode = []EncodeFunc{
+		encode,
+	}
+}
+
+type ArgumentNameInvalid string
+
+func (e ArgumentNameInvalid) Error() string {
+	return fmt.Sprintf("Invalid argument name: %s", string(e))
+}
+
+type ValueInvalid string
+
+func (e ValueInvalid) Error() string {
+	return fmt.Sprintf("Invalid cookie value: %s", string(e))
+}
+
+type DomainInvalid string
+
+func (e DomainInvalid) Error() string {
+	return fmt.Sprintf("Invalid domain value: %s", string(e))
+}
+
+type PathInvalid string
+
+func (e PathInvalid) Error() string {
+	return fmt.Sprintf("Invalid path value: %s", string(e))
+}
+
+type SameSiteInvalid string
+
+func (e SameSiteInvalid) Error() string {
+	return fmt.Sprintf("Invalid SameSite value: %s", string(e))
+}
+
+func Serialize(name string, val string, options *SerializeOptions) (*string, error) {
+
+	if !cookieNameRegExp.MatchString(name) {
+		return nil, ArgumentNameInvalid(name)
+	}
+
+	var value string
+	if options != nil && options.encode != nil && len(options.encode) > 0 {
+		var returnType, err = options.encode[0](val)
+		if err != nil {
+			return nil, err
+		}
+		value = returnType
+	} else {
+		value = url.QueryEscape(val)
+		if strings.Contains(value, "+") {
+			value = strings.ReplaceAll(value, "+", "%20")
+		}
+	}
+
+	if !cookieValueRegExp.MatchString(value) {
+		return nil, ValueInvalid(value)
+	}
+
+	str := name + "=" + value
+	if options == nil {
+		return &str, nil
+	}
+
+	if options.MaxAge != nil {
+		str += "; Max-Age=" + strconv.Itoa(*options.MaxAge)
+	}
+
+	if options.Domain != nil {
+		if !domainValueRegExp.MatchString(*options.Domain) {
+			return nil, DomainInvalid(*options.Domain)
+		}
+		str += "; Domain=" + *options.Domain
+	}
+
+	if options.Path != nil {
+		if !pathValueRegExp.MatchString(*options.Path) {
+			return nil, PathInvalid(*options.Path)
+		}
+		str += "; Path=" + *options.Path
+	}
+
+	if options.HttpOnly != nil && *options.HttpOnly {
+		str += "; HttpOnly"
+	}
+
+	if options.Expires != nil {
+		str += "; Expires=" + options.Expires.Format(http.TimeFormat)
+	}
+
+	if options.Secure != nil && *options.Secure {
+		str += "; Secure"
+	}
+
+	if options.Partitioned != nil && *options.Partitioned {
+		str += "; Partitioned"
+	}
+
+	if options.Priority != nil {
+		str += "; Priority=" + string(*options.Priority)
+	}
+
+	if options.SameSite != nil {
+		switch *options.SameSite {
+		case SameSiteTrue:
+			str += "; SameSite=Strict"
+		case SameSiteStrict:
+			str += "; SameSite=Strict"
+			break
+		case SameSiteLax:
+			str += "; SameSite=Lax"
+			break
+		case SameSiteNone:
+			str += "; SameSite=None"
+			break
+		case SameSiteFalse:
+		default:
+			return nil, SameSiteInvalid(*options.SameSite)
+		}
+	}
+
+	return &str, nil
 }
 
 func StartIndex(str string, index int, max int) int {
@@ -319,7 +443,7 @@ func decode(str string) (string, error) {
 	if strings.Index(str, "%") == -1 {
 		return str, nil
 	}
-	dateQuery, err := url.QueryUnescape(str)
+	dateQuery, err := url.PathUnescape(str)
 	if err != nil {
 		return str, nil
 	}
