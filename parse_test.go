@@ -1,6 +1,9 @@
 package cookie
 
-import "testing"
+import (
+	"encoding/base64"
+	"testing"
+)
 
 func TestShouldParseCookieStringToMap(t *testing.T) {
 	resultMap := Parse("foo=bar", nil)
@@ -146,9 +149,29 @@ func TestShouldIgnoreDuplicateCookies(t *testing.T) {
 	}
 }
 
+type Base64ParseOptions struct {
+}
+
+func (p *Base64ParseOptions) Decode(str string) (string, error) {
+	base64Rep, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		return "", err
+	}
+	return string(base64Rep), nil
+}
+
 func TestShouldParseNativeProperties(t *testing.T) {
 	result := Parse("toString=foo;valueOf=bar", nil)
 	if result["toString"] != "foo" || result["valueOf"] != "bar" {
 		t.Errorf("Expected map[toString:foo valueOf:bar] but got %v", result)
+	}
+}
+
+func TestShouldParseWithDecodingFunction(t *testing.T) {
+	b := Base64ParseOptions{}
+
+	result := Parse("foo=YmFy", &b)
+	if result["foo"] != "bar" {
+		t.Errorf("Expected foo=bar but got %v", result)
 	}
 }

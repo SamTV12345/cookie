@@ -132,7 +132,7 @@ func LastIndex(str, substr string, position int) int {
 	return index
 }
 
-func Parse(str string, options *ParseOptions) map[string]interface{} {
+func Parse(str string, options ParseOptions) map[string]interface{} {
 	obj := make(map[string]interface{})
 	lenOfStr := len(str)
 	// RFC 6265 sec 4.1.1, RFC 2616 2.2 defines a cookie name consists of one char minimum, plus '='.
@@ -142,7 +142,7 @@ func Parse(str string, options *ParseOptions) map[string]interface{} {
 
 	var dec func(string) (string, error)
 	if options != nil {
-		dec = (*options).Decode
+		dec = (options).Decode
 	} else {
 		dec = decode
 	}
